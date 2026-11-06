@@ -197,6 +197,19 @@ details.hh-card > summary { cursor: pointer; font-size: var(--cds-font-size-head
   .hh-nav button { transition: background-color 200ms, color 200ms; }
 }
 .hh-rl-notes { margin: var(--cds-gap-sm) 0 0; padding-left: 1.1rem; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.hh-detail:empty { display: none; }
+.hh-detail { margin-top: var(--cds-gap-md); padding-top: var(--cds-gap-md); border-top: 1px solid var(--color-border-line); }
+.hh-detail h3 { margin: 0 0 2px; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.hh-detail .hh-dsub { margin: 0 0 var(--cds-gap-sm); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.hh-drow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 2px var(--cds-gap-md); align-items: baseline; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: var(--cds-font-size-caption); }
+.hh-drow:hover { background: var(--cds-chart-grid); }
+.hh-drow .hh-dn { overflow-wrap: anywhere; }
+.hh-drow .hh-da { color: var(--color-fg-muted); text-align: right; }
+.hh-drow .hh-di { font-weight: 600; text-align: right; min-width: 5.5rem; }
+.hh-drow .hh-dbar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--cds-chart-grid); position: relative; overflow: hidden; }
+.hh-drow .hh-dbar > div { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.hh-dhead { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--cds-gap-md); padding: 0 8px 4px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.hh-dhead span:not(:first-child) { text-align: right; min-width: 5.5rem; }
 [data-dash-source-state=empty] { color: transparent; }
 [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
 @media (max-width: 760px) {
@@ -263,8 +276,9 @@ details.hh-card > summary { cursor: pointer; font-size: var(--cds-font-size-head
         </div>
         <div class="hh-card" id="karte-anteile-einnahmen">
           <h2>Woher kamen die Einnahmen? · <span data-draw="jahr-label">—</span></h2>
-          <p class="hh-note">Anteile am Ist der Einnahmen.</p>
+          <p class="hh-note">Anteile am Ist der Einnahmen. Klicken Sie auf einen Bereich, um die Herkunft im Detail zu sehen.</p>
           <div class="hh-donut" id="donut-einnahmen" data-draw="donut-e" data-source="struktur"></div>
+          <div class="hh-detail" id="einnahmen-detail" data-draw="einn-detail" data-source="zeilen struktur"></div>
         </div>
       </section>
 
@@ -885,21 +899,24 @@ dash.calc('schnitt', {
     const top = rows.slice(0, 7);
     const rest = rows.slice(7);
     const items = top.map((r, i) => ({label: r.kategorie, ist: r.ist, key: r.key, color: dash.colors[i % dash.colors.length]}));
-    if (rest.length) items.push({label: `Übrige (${rest.length})`, ist: d3.sum(rest, (r) => r.ist), key: null, color: 'var(--cds-chart-muted)'});
+    if (rest.length) items.push({label: `Übrige (${rest.length})`, ist: d3.sum(rest, (r) => r.ist), key: 'REST', color: 'var(--cds-chart-muted)'});
     const size = Math.max(160, Math.min(230, el.clientWidth * 0.45));
     const R = size / 2;
     const svg = d3.select(el).append('svg').attr('width', size).attr('height', size).attr('viewBox', `${-R} ${-R} ${size} ${size}`);
     const arc = d3.arc().innerRadius(R * 0.6).outerRadius(R - 2).cornerRadius(3).padAngle(0.012);
     const arcs = d3.pie().sort(null).value((d) => d.ist)(items);
     const tip = HH.tip(el);
+    const ek = art === 'Einnahmen' ? dash.params().ekat : null;
+    const sel = ek && items.some((d) => d.key === ek) ? ek : null;
     const pick = (d) => {
-      if (!d.key) return;
-      if (scope === 'GESAMT') { if (art === 'Ausgaben') dash.setParams({scope: d.key}); }
+      if (art === 'Einnahmen') { dash.setParams({ekat: sel === d.key ? null : d.key}); return; }
+      if (!d.key || d.key === 'REST') return;
+      if (scope === 'GESAMT') dash.setParams({scope: d.key});
       else dash.setParams({scope: p.scope === d.key ? p.hhst : d.key});
     };
     svg.selectAll('path').data(arcs).join('path').attr('d', arc)
       .style('fill', (a) => a.data.color).style('cursor', 'pointer')
-      .attr('opacity', (a) => (p.konto && a.data.key && a.data.key !== p.scope ? 0.35 : 1))
+      .attr('opacity', (a) => (sel ? (a.data.key === sel ? 1 : 0.3) : (p.konto && a.data.key && a.data.key !== p.scope ? 0.35 : 1)))
       .on('mousemove', (event, a) => HH.showTip(el, tip, event, a.data.label, [[a.data.color, 'Ist', HH.nf2.format(a.data.ist)], [null, 'Anteil', HH.pf.format(a.data.ist / total)]]))
       .on('mouseleave', () => { tip.hidden = true; })
       .on('click', (event, a) => pick(a.data));
@@ -911,7 +928,7 @@ dash.calc('schnitt', {
     const ul = document.createElement('ul');
     items.forEach((d, idx) => {
       const li = document.createElement('li');
-      if (p.scope === d.key) li.className = 'is-on';
+      if (p.scope === d.key || (sel && sel === d.key)) li.className = 'is-on';
       const i = document.createElement('i'); i.style.background = d.color;
       const n = document.createElement('span'); n.textContent = d.label; n.title = d.label;
       const v = document.createElement('span'); v.textContent = HH.nf0.format(d.ist);
@@ -924,6 +941,67 @@ dash.calc('schnitt', {
     el.append(ul);
   };
   dash.draw('donut-a', (el) => donut(el, 'Ausgaben'));
+
+  dash.draw('einn-detail', (el) => {
+    const p = HH.P();
+    const ekat = dash.params().ekat;
+    const z = dash.data('zeilen'), st = dash.data('struktur');
+    el.replaceChildren();
+    if (!ekat || z.status !== 'ok' || st.status !== 'ok') return;
+    const scope = p.hhst || 'GESAMT';
+    const sas = new Set(['9200.01', '0300.01', '0300.03']);
+    const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+    const close = mk('button', 'hh-step', '×');
+    close.type = 'button'; close.setAttribute('aria-label', 'Detail schließen'); close.style.float = 'right';
+    close.onclick = () => dash.setParams({ekat: null});
+    const row = (name, ansatz, ist, max, onclick, cite) => {
+      const r = mk('div', 'hh-drow');
+      const n = mk('span', 'hh-dn', name);
+      const a = mk('span', 'hh-da', ansatz == null ? '' : HH.nf2.format(ansatz));
+      const i = mk('span', 'hh-di');
+      if (cite) HH.cite(i, cite[0], cite[1], cite[2], HH.nf2.format(ist)); else i.textContent = HH.nf2.format(ist);
+      const bar = mk('div', 'hh-dbar'); const f = mk('div');
+      f.style.background = HH.accent2();
+      const w = Math.max(0, Math.min(100, max ? ist / max * 100 : 0)) + '%';
+      if (HH.motion()) { f.style.width = '0%'; f.style.transition = 'width 700ms cubic-bezier(.2,.8,.2,1)'; requestAnimationFrame(() => requestAnimationFrame(() => { f.style.width = w; })); } else f.style.width = w;
+      bar.append(f);
+      r.append(n, a, i, bar);
+      if (onclick) r.onclick = onclick;
+      return r;
+    };
+    const head = (c1) => { const h = mk('div', 'hh-dhead'); h.append(mk('span', null, c1), mk('span', null, 'Ansatz'), mk('span', null, 'Ist')); return h; };
+    if (ekat === 'REST') {
+      const all = st.data.filter((r) => r.jahr === p.jahr && r.scope === scope && r.art === 'Einnahmen' && r.ist > 0).sort((a, b) => b.ist - a.ist).slice(7);
+      if (!all.length) return;
+      const max = d3.max(all, (r) => r.ist);
+      el.append(close, mk('h3', null, 'Übrige Einnahmen'), mk('p', 'hh-dsub', 'Klicken Sie auf eine Zeile, um sie aufzuschlüsseln.'), head('Bereich'),
+        ...all.map((r) => row(r.kategorie, null, r.ist, max, () => dash.setParams({ekat: r.key}),
+          ['struktur', `jahr=${r.jahr}&scope=${HH.enc(r.scope)}&art=Einnahmen&key=${HH.enc(r.key)}`, 'ist'])));
+      return;
+    }
+    let lines, title;
+    if (scope === 'GESAMT') {
+      const konto = ekat.startsWith('K') ? ekat.slice(1) : null;
+      if (!konto) return;
+      lines = z.data.filter((r) => r.jahr === p.jahr && r.art === 'Einnahmen' && r.konto === konto && !r.technisch && !sas.has(r.hhst) && (r.ist || r.ansatz));
+      if (!lines.length) return;
+      title = lines[0].konto + ' ' + lines[0].konto_name;
+      const max = d3.max(lines, (r) => Math.max(r.ist, 0));
+      el.append(close, mk('h3', null, title), mk('p', 'hh-dsub', `Herkunft nach Haushaltsstelle im Jahr ${p.jahr}. Klicken Sie auf eine Zeile, um die Haushaltsstelle zu öffnen.`), head('Haushaltsstelle'),
+        ...lines.sort((a, b) => b.ist - a.ist).map((r) => row(r.hhst + ' ' + r.hhst_name, r.ansatz, r.ist, max,
+          () => dash.setParams({scope: r.hhst + '/' + r.konto, ekat: null}),
+          ['zeilen', `jahr=${r.jahr}&hhst=${HH.enc(r.hhst)}&konto=${HH.enc(r.konto)}`, 'ist'])));
+    } else {
+      const key = ekat;
+      lines = z.data.filter((r) => r.jahr === p.jahr && r.art === 'Einnahmen' && r.hhst === p.hhst && !r.technisch && r.hhst + '/' + r.konto === key);
+      if (!lines.length) return;
+      const r = lines[0];
+      el.append(close, mk('h3', null, r.konto + ' ' + r.konto_name), mk('p', 'hh-dsub', `${r.hhst} ${r.hhst_name} · ${p.jahr}`), head('Sachkonto'),
+        row(r.konto + ' ' + r.konto_name, r.ansatz, r.ist, Math.max(r.ist, r.ansatz),
+          () => dash.setParams({scope: r.hhst + '/' + r.konto, ekat: null}),
+          ['zeilen', `jahr=${r.jahr}&hhst=${HH.enc(r.hhst)}&konto=${HH.enc(r.konto)}`, 'ist']));
+    }
+  });
   dash.draw('donut-e', (el) => donut(el, 'Einnahmen'));
 
   dash.draw('chart-trend', (el) => {
@@ -1137,7 +1215,7 @@ dash.calc('schnitt', {
 <footer class="site-foot"><img src="logo.png" alt=""><span>Stand der Daten: 06.11.2026 · Quelle: Sachbuch-Saldenlisten, Haushaltsüberwachungslisten und Vermögenslisten des Ev. Regionalverbands Frankfurt. Nur zur Ansicht.</span></footer>
 </div>
 <style>.hh .hh-head { background: var(--color-panel); border: 0; border-radius: var(--cds-radius); padding: 26px 28px; box-shadow: var(--card-shadow); margin-bottom: var(--cds-gap-lg); align-items: center; }
-.hh .hh-kicker { display: none; }
+.hh .hh-kicker { color: var(--brand); font-weight: 600; }
 .hh .hh-title { color: var(--color-fg); }
 .hh .hh-badge { background: var(--brand-soft); border-color: transparent; color: var(--brand); font-weight: 500; }
 .hh .hh-card, .hh .hh-tile { border: 1px solid var(--color-border-line); box-shadow: var(--card-shadow); }
@@ -1159,6 +1237,7 @@ dash.calc('schnitt', {
 .hh details.hh-card > summary::marker { color: var(--brand); }
 .hh .hh-notes summary { color: var(--brand); }
 @media (max-width: 760px) { .hh .hh-nav { padding: 6px; } .site-hero img { width: 56px; height: 56px; } }
+.hh .hh-kicker { display: none; }
 </style>
 <script>dash._start();</script>
 </body>
